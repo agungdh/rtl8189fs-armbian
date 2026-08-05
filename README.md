@@ -3,6 +3,7 @@
 [![License](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Armbian%20%7C%20Linux%205.x%20%7C%206.x-green.svg)]()
 [![Hardware](https://img.shields.io/badge/Hardware-ZTE%20B860H%20%7C%20FiberHome%20HG680P%20%7C%20S905X-orange.svg)]()
+[![Release](https://img.shields.io/badge/GitHub-Release%20v1.0.0-brightgreen.svg)](https://github.com/gustiarto/rtl8189fs-armbian/releases/tag/v1.0.0)
 
 A community-maintained out-of-tree Linux kernel driver and prebuilt module repository for the **Realtek RTL8189FTV / RTL8189FS** SDIO Wi-Fi chipset. Optimized for Amlogic TV Box Single Board Computers (SBCs) such as **ZTE ZXV10 B860H (v1 / v2 / v2.1)** and **FiberHome HG680P** running modern Armbian Linux kernels (Linux 5.x and 6.x).
 
@@ -16,7 +17,7 @@ Because Realtek does not maintain `8189fs` in the official mainline Linux kernel
 
 This repository provides:
 1. **Fully patched source code** capable of compiling cleanly on modern ARM64 Linux kernels (including Linux 6.1.x / 6.6.x).
-2. **Prebuilt driver modules (`.ko`)** for popular Armbian kernel builds (e.g. `6.1.170-ophub`).
+2. **Prebuilt driver modules (`.ko`)** in tree and via [GitHub Releases](https://github.com/gustiarto/rtl8189fs-armbian/releases/tag/v1.0.0) (e.g. `6.1.170-ophub`).
 3. **Automated installer script (`install.sh`)** for one-command build and installation.
 
 ---
@@ -66,13 +67,25 @@ The script will automatically detect your active kernel version:
 
 ---
 
-## 🛠️ Prebuilt Binary Installation
+## 📦 Prebuilt Binary Download & Release
+
+Prebuilt binary modules are stored in  as well as published on **[GitHub Releases](https://github.com/gustiarto/rtl8189fs-armbian/releases)**.
 
 If your system runs **Armbian Kernel `6.1.170-ophub`**, you can install the prebuilt binary directly:
 
+### Option A: Install from repository clone
 ```bash
 sudo mkdir -p /lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtl8189fs
 sudo cp prebuilt/6.1.170-ophub/8189fs.ko /lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtl8189fs/
+sudo depmod -a
+sudo modprobe 8189fs
+```
+
+### Option B: Download directly from GitHub Release
+```bash
+wget https://github.com/gustiarto/rtl8189fs-armbian/releases/download/v1.0.0/8189fs-6.1.170-ophub.ko
+sudo mkdir -p /lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtl8189fs
+sudo cp 8189fs-6.1.170-ophub.ko /lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtl8189fs/8189fs.ko
 sudo depmod -a
 sudo modprobe 8189fs
 ```
