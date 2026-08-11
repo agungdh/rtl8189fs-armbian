@@ -97,6 +97,50 @@ ip link show wlan1
 
 ---
 
+## 🤖 Build with GitHub Actions (Free CI)
+
+No toolchain or kernel headers needed on your machine — the entire build runs on GitHub's free runners. This is the easiest way to compile `8189fs.ko` for any **ophub kernel version** (e.g. `6.18.41-ophub`) without touching your STB.
+
+### 1. Trigger the build
+
+1. Open the [Actions tab](https://github.com/agungdh/rtl8189fs-armbian/actions) → **Build 8189fs** workflow.
+2. Click **Run workflow**.
+3. In the **kernels** field, enter the target kernel version(s), comma-separated (default: `6.18.41`).
+4. Click **Run workflow** and wait for the build to finish.
+
+### 2. What the workflow does
+
+1. Downloads `deb-<version>.tar.gz` from [`ophub/kernel`](https://github.com/ophub/kernel/releases/tag/kernel_stable) containing `linux-headers_<version>-1-ophub_arm64.deb`.
+2. Installs the `aarch64-linux-gnu-gcc-14` cross-compiler on `ubuntu-latest`.
+3. Rebuilds the kbuild host scripts (ophub headers ship ARM64-built binaries).
+4. Compiles the module:
+   ```bash
+   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+        KSRC=<headers> CONFIG_PLATFORM_AML_S905=y
+   ```
+5. Uploads `8189fs.ko` as a **build artifact** and commits it back to the repo under `prebuilt/<version>-ophub/8189fs.ko`.
+
+### 3. Install the built module on your STB
+
+Grab the artifact (or the committed file) and run on your Armbian device:
+
+```bash
+sudo mkdir -p /lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtl8189fs
+sudo cp 8189fs.ko /lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtl8189fs/
+sudo depmod -a
+sudo modprobe 8189fs
+```
+
+Verify the interface:
+
+```bash
+ip link show wlan1
+```
+
+> **Tip**: For non-ophub / standard kernel releases the workflow can also be adapted by changing the download source and headers package name.
+
+---
+
 ## 🛠️ Manual Compilation Guide
 
 If you prefer to compile manually:
