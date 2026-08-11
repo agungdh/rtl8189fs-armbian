@@ -42,7 +42,7 @@ jobs:
           sudo apt-get install -y \
             gcc-14-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
-            make bc libelf-dev
+            make bc libelf-dev flex bison
           sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-14 /usr/local/bin/aarch64-linux-gnu-gcc
           aarch64-linux-gnu-gcc --version | head -1
 
@@ -65,7 +65,7 @@ jobs:
           KREL: ${{ matrix.kernel }}-ophub
         run: |
           cd /tmp/headers/usr/src/linux-headers-${KREL}
-          rm -rf scripts
+          grep -rlZ $'\x7fELF' scripts | xargs -0 rm -f
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
 
       - name: Compile 8189fs.ko
