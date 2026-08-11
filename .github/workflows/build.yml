@@ -1,44 +1,113 @@
-name: Build
+name: Build 8189fs
 
-on: [pull_request]
+on:
+  workflow_dispatch:
+    inputs:
+      kernels:
+        description: 'Comma-separated ophub kernel versions (e.g. 6.18.41,6.12.100)'
+        required: false
+        default: '6.18.41'
+
+permissions:
+  contents: write
 
 jobs:
-  fetchKernelData:
+  resolve:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      kernels: ${{ steps.set.outputs.kernels }}
     steps:
-      - id: set-matrix
+      - id: set
         run: |
-          JSON=$(curl https://www.kernel.org/releases.json)
-          VERSIONSARRAY=$(echo $JSON | jq -c '[.releases[] | {version: .version, moniker: .moniker} | select(.moniker != "linux-next") | .version]')
-          echo ::set-output name=matrix::${VERSIONSARRAY}
+          INPUT="${{ inputs.kernels }}"
+          if [ -z "$INPUT" ]; then
+            INPUT="6.18.41"
+          fi
+          echo "$INPUT" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -Rc -s 'split("\n") | map(select(length > 0))' > /tmp/kernels.json
+          echo "kernels=$(cat /tmp/kernels.json)" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: fetchKernelData
+    needs: resolve
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        version: ${{fromJson(needs.fetchKernelData.outputs.matrix)}}
-        #version: [4.9.248, 4.4.248]
+        kernel: ${{ fromJson(needs.resolve.outputs.kernels) }}
     steps:
-      - name: download-Kernel
-        env:
-          VERSION: ${{matrix.version }}
+      - uses: actions/checkout@v4
+
+      - name: Install aarch64 cross toolchain
         run: |
-          KERNEL_URL=https://kernel.ubuntu.com/~kernel-ppa/mainline/
-          KERNEL_URL_DETAILS=$(wget --quiet -O - ${KERNEL_URL}v${VERSION}/ | grep -A8 "Build for amd64\|Test amd64")
-          ALL_DEB=$(echo "$KERNEL_URL_DETAILS" |  grep -m1 'all.deb' | cut -d '"' -f 2)
-          AMD64_DEB=$(echo "$KERNEL_URL_DETAILS" | grep -m1 "amd64.deb" | cut -d '"' -f 2)
-          [  -z "$ALL_DEB" ] && exit 1
-          [  -z "$AMD64_DEB" ] && exit 2
-          wget -nv ${KERNEL_URL}v${VERSION}/$AMD64_DEB
-          wget -nv ${KERNEL_URL}v${VERSION}/$ALL_DEB
-          sudo dpkg --force-all -i *.deb
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
-          echo "KVER=$(echo $ALL_DEB | cut -d '_' -f 2 | rev | cut -c14- | rev)-generic" >> $GITHUB_ENV
-      - uses: actions/checkout@v2
-      - name: build
-        run: make KVER=$KVER CONFIG_PLATFORM_I386_PC=y CC=cc
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-14-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            make bc libelf-dev
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-14 /usr/local/bin/aarch64-linux-gnu-gcc
+          aarch64-linux-gnu-gcc --version | head -1
+
+      - name: Download & extract ophub headers for ${{ matrix.kernel }}
+        env:
+          KVER: ${{ matrix.kernel }}
+        run: |
+          KREL="${KVER}-ophub"
+          curl -sL -o /tmp/deb-${KVER}.tar.gz \
+            "https://github.com/ophub/kernel/releases/download/kernel_stable/deb-${KVER}.tar.gz"
+          mkdir -p /tmp/deb-${KVER}
+          tar xzf /tmp/deb-${KVER}.tar.gz -C /tmp/deb-${KVER}
+          mkdir -p /tmp/headers
+          dpkg-deb -x /tmp/deb-${KVER}/deb-${KVER}/linux-headers_${KVER}-1-ophub_arm64.deb /tmp/headers
+          ls -la /tmp/headers/usr/src/linux-headers-${KREL}/.config
+
+      - name: Rebuild kbuild host scripts (headers are ARM64-built)
+        env:
+          KVER: ${{ matrix.kernel }}
+          KREL: ${{ matrix.kernel }}-ophub
+        run: |
+          cd /tmp/headers/usr/src/linux-headers-${KREL}
+          rm -rf scripts
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
+
+      - name: Compile 8189fs.ko
+        env:
+          KVER: ${{ matrix.kernel }}
+          KREL: ${{ matrix.kernel }}-ophub
+        run: |
+          make clean
+          make ARCH=arm64 \
+               CROSS_COMPILE=aarch64-linux-gnu- \
+               KSRC=/tmp/headers/usr/src/linux-headers-${KREL} \
+               CONFIG_PLATFORM_AML_S905=y \
+               -j$(nproc)
+          file 8189fs.ko
+          modinfo 8189fs.ko | head -10
+
+      - name: Stage prebuilt module
+        env:
+          KVER: ${{ matrix.kernel }}
+          KREL: ${{ matrix.kernel }}-ophub
+        run: |
+          mkdir -p "prebuilt/${KREL}"
+          cp 8189fs.ko "prebuilt/${KREL}/"
+          sha256sum "prebuilt/${KREL}/8189fs.ko"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 8189fs-${{ matrix.kernel }}-ophub.ko
+          path: prebuilt/${{ matrix.kernel }}-ophub/8189fs.ko
+
+      - name: Commit prebuilt module back to repo
+        if: github.ref_type == 'branch'
+        env:
+          KREL: ${{ matrix.kernel }}-ophub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "prebuilt/${KREL}/8189fs.ko"
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Add prebuilt 8189fs.ko for ${KREL}"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
