@@ -59,14 +59,13 @@ jobs:
           dpkg-deb -x /tmp/deb-${KVER}/deb-${KVER}/linux-headers_${KVER}-1-ophub_arm64.deb /tmp/headers
           ls -la /tmp/headers/usr/src/linux-headers-${KREL}/.config
 
-      - name: Rebuild kbuild host scripts (headers are ARM64-built)
+      - name: Strip ARM64 host binaries from kbuild scripts
         env:
           KVER: ${{ matrix.kernel }}
           KREL: ${{ matrix.kernel }}-ophub
         run: |
           cd /tmp/headers/usr/src/linux-headers-${KREL}
           grep -rlZ $'\x7fELF' scripts | xargs -0 rm -f
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
 
       - name: Compile 8189fs.ko
         env:
